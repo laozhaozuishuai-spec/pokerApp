@@ -1,0 +1,21 @@
+{
+  "name": "poker-multiplayer-app",
+  "version": "1.0.0",
+  "description": "Multiplayer Texas Hold'em with Node.js, WebSocket and Three.js",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "keywords": [
+    "poker",
+    "texas-holdem",
+    "websocket",
+    "threejs",
+    "multiplayer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

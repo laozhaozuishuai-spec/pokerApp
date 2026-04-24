@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>德州扑克多人对战</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1e3550;
+        font-family: Arial, sans-serif;
+        color: #fff;
+      }
+      #ui {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      .panel {
+        position: absolute;
+        background: rgba(10, 30, 45, 0.58);
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 10px;
+        padding: 8px 10px;
+        pointer-events: auto;
+      }
+      #topBar {
+        top: 10px;
+        left: 10px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      #actions {
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      #players {
+        right: 10px;
+        top: 10px;
+        width: 260px;
+        max-height: 60vh;
+        overflow: auto;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      #log {
+        left: 10px;
+        bottom: 80px;
+        width: 380px;
+        max-height: 180px;
+        overflow: auto;
+        font-size: 12px;
+      }
+      button, input {
+        border: none;
+        border-radius: 6px;
+        padding: 6px 10px;
+      }
+      button {
+        background: #1f8f4b;
+        color: white;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #2d6fa5;
+      }
+      button.warn {
+        background: #b54646;
+      }
+      input {
+        background: #ffffffd9;
+      }
+      #status {
+        font-weight: bold;
+      }
+      .pill {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.18);
+        border: 1px solid rgba(255, 255, 255, 0.32);
+        font-size: 13px;
+      }
+      .turn-hot {
+        background: rgba(255, 212, 71, 0.28);
+        border-color: rgba(255, 212, 71, 0.9);
+        box-shadow: 0 0 12px rgba(255, 212, 71, 0.8);
+        animation: pulse 0.9s ease-in-out infinite alternate;
+      }
+      @keyframes pulse {
+        from { transform: scale(1); }
+        to { transform: scale(1.04); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui">
+      <div id="topBar" class="panel">
+        <input id="nameInput" placeholder="昵称" value="玩家" />
+        <input id="roomInput" placeholder="房间号" value="default" />
+        <button id="joinBtn">加入房间</button>
+        <button id="startBtn" class="secondary">开始下一局</button>
+        <span id="status">未连接</span>
+        <span id="myPlayerTag" class="pill">我是#-玩家</span>
+        <span id="turnTag" class="pill">当前行动: 等待中</span>
+      </div>
+      <div id="players" class="panel"></div>
+      <div id="log" class="panel"></div>
+      <div id="actions" class="panel">
+        <button id="checkBtn">Check</button>
+        <button id="callBtn" class="secondary">Call</button>
+        <input id="raiseInput" type="number" value="40" min="20" step="10" style="width: 90px" />
+        <button id="raiseBtn">Raise</button>
+        <button id="foldBtn" class="warn">Fold</button>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+    <script>
+      const statusEl = document.getElementById("status");
+      const playersEl = document.getElementById("players");
+      const logEl = document.getElementById("log");
+      const joinBtn = document.getElementById("joinBtn");
+      const startBtn = document.getElementById("startBtn");
+      const checkBtn = document.getElementById("checkBtn");
+      const callBtn = document.getElementById("callBtn");
+      const raiseBtn = document.getElementById("raiseBtn");
+      const foldBtn = document.getElementById("foldBtn");
+      const raiseInput = document.getElementById("raiseInput");
+      const nameInput = document.getElementById("nameInput");
+      const roomInput = document.getElementById("roomInput");
+      const myPlayerTag = document.getElementById("myPlayerTag");
+      const turnTag = document.getElementById("turnTag");
+
+      let ws;
+      let myId = null;
+      let gameState = null;
+      let hasJoinedRoom = false;
+      let pendingJoinPayload = null;
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1f3f63);
+      const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 28, 40);
+      camera.lookAt(0, -2, 0);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const ambient = new THREE.AmbientLight(0xffffff, 1.0);
+      scene.add(ambient);
+      const spot = new THREE.SpotLight(0xfff8e1, 1.8, 300, Math.PI / 4, 0.35, 1.2);
+      spot.position.set(0, 62, 20);
+      scene.add(spot);
+      const fillLight = new THREE.DirectionalLight(0x9ad4ff, 0.9);
+      fillLight.position.set(-35, 28, -24);
+      scene.add(fillLight);
+      const TABLE_Y_OFFSET = 5.0;
+
+      const table = new THREE.Mesh(
+        new THREE.CylinderGeometry(28, 28, 3.2, 72),
+        new THREE.MeshStandardMaterial({ color: 0x1ccf7a, roughness: 0.55, metalness: 0.18 })
+      );
+      table.position.y = -2.2 + TABLE_Y_OFFSET;
+      scene.add(table);
+
+      const tableEdge = new THREE.Mesh(
+        new THREE.TorusGeometry(28, 1.8, 24, 120),
+        new THREE.MeshStandardMaterial({ color: 0xa35d2d, roughness: 0.28, metalness: 0.2 })
+      );
+      tableEdge.rotation.x = Math.PI / 2;
+      tableEdge.position.y = TABLE_Y_OFFSET;
+      scene.add(tableEdge);
+
+      const feltCenter = new THREE.Mesh(
+        new THREE.CircleGeometry(13, 72),
+        new THREE.MeshStandardMaterial({ color: 0x39e28f })
+      );
+      feltCenter.rotation.x = -Math.PI / 2;
+      feltCenter.position.y = -0.55 + TABLE_Y_OFFSET;
+      scene.add(feltCenter);
+
+      const seatMeshes = [];
+      const seatCards = [];
+      const roleMarkers = [];
+      const cardGeometry = new THREE.BoxGeometry(2.5, 0.12, 3.6);
+      const SEAT_ANGLE_OFFSET = Math.PI / 2;
+
+      function createTextTexture(text, bg = "#fff", fg = "#111") {
+        const c = document.createElement("canvas");
+        c.width = 320;
+        c.height = 180;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.strokeStyle = "rgba(0,0,0,0.22)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(3, 3, c.width - 6, c.height - 6);
+
+        const suitMap = { S: "♠", H: "♥", D: "♦", C: "♣" };
+        const suit = text.length === 2 ? text[1] : "";
+        const rank = text.length === 2 ? text[0] : text;
+        const suitChar = suitMap[suit] || "";
+        const isRed = suit === "H" || suit === "D";
+        const mainColor = isRed ? "#d01818" : "#101218";
+
+        if (suitChar) {
+          // top-left corner index (rank + suit)
+          ctx.fillStyle = mainColor;
+          ctx.font = "bold 64px Arial";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "top";
+          ctx.fillText(rank, 18, 10);
+          ctx.font = "bold 54px Arial";
+          ctx.fillText(suitChar, 22, 72);
+
+          // bottom-right mirrored corner index
+          ctx.save();
+          ctx.translate(c.width, c.height);
+          ctx.rotate(Math.PI);
+          ctx.font = "bold 64px Arial";
+          ctx.fillText(rank, 18, 10);
+          ctx.font = "bold 54px Arial";
+          ctx.fillText(suitChar, 22, 72);
+          ctx.restore();
+
+          // center suit with subtle white stroke for clarity
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.font = "bold 102px Arial";
+          ctx.strokeStyle = "rgba(255,255,255,0.85)";
+          ctx.lineWidth = 6;
+          ctx.strokeText(suitChar, c.width / 2, c.height / 2 + 4);
+          ctx.fillText(suitChar, c.width / 2, c.height / 2 + 4);
+        } else {
+          ctx.fillStyle = fg;
+          ctx.font = "bold 66px Arial";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(text, c.width / 2, c.height / 2);
+        }
+        const texture = new THREE.CanvasTexture(c);
+        texture.needsUpdate = true;
+        return texture;
+      }
+
+      function createCardBackTexture() {
+        const c = document.createElement("canvas");
+        c.width = 256;
+        c.height = 128;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#1a4a9f";
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.strokeStyle = "#f0d46a";
+        ctx.lineWidth = 8;
+        ctx.strokeRect(10, 10, c.width - 20, c.height - 20);
+        ctx.strokeStyle = "rgba(255,255,255,0.55)";
+        ctx.lineWidth = 3;
+        for (let x = -c.height; x < c.width; x += 18) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x + c.height, c.height);
+          ctx.stroke();
+        }
+        const texture = new THREE.CanvasTexture(c);
+        texture.needsUpdate = true;
+        return texture;
+      }
+
+      function makeCardMesh(label) {
+        const frontTexture = createTextTexture(label);
+        const backTexture = createCardBackTexture();
+        const materials = [
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }),
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }),
+          new THREE.MeshStandardMaterial({ map: backTexture, roughness: 0.55 }),
+          new THREE.MeshStandardMaterial({ map: frontTexture, roughness: 0.6 }),
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }),
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 })
+        ];
+        return new THREE.Mesh(cardGeometry, materials);
+      }
+
+      function createRoleMarkerSprite(text, bgColor) {
+        const c = document.createElement("canvas");
+        c.width = 128;
+        c.height = 128;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = bgColor;
+        ctx.beginPath();
+        ctx.arc(64, 64, 52, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = text.length > 1 ? "bold 44px Arial" : "bold 58px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, 64, 66);
+        const texture = new THREE.CanvasTexture(c);
+        texture.needsUpdate = true;
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+        sprite.scale.set(2.5, 2.5, 1);
+        sprite.visible = false;
+        return sprite;
+      }
+
+      function initSeats() {
+        for (let i = 0; i < 9; i += 1) {
+          const angle = SEAT_ANGLE_OFFSET + (Math.PI * 2 * i) / 9;
+          const x = Math.cos(angle) * 22;
+          const z = Math.sin(angle) * 22;
+          const chip = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.5, 1.5, 0.7, 24),
+            new THREE.MeshStandardMaterial({ color: 0x41a6ff })
+          );
+          chip.position.set(x, -0.7 + TABLE_Y_OFFSET, z);
+          scene.add(chip);
+          seatMeshes.push(chip);
+
+          const c1 = makeCardMesh("??");
+          const c2 = makeCardMesh("??");
+          const tangentX = -Math.sin(angle);
+          const tangentZ = Math.cos(angle);
+          c1.position.set(x - tangentX * 1.5, -0.25 + TABLE_Y_OFFSET, z - tangentZ * 1.5);
+          c2.position.set(x + tangentX * 1.5, -0.25 + TABLE_Y_OFFSET, z + tangentZ * 1.5);
+          c1.rotation.y = -angle + Math.PI / 2;
+          c2.rotation.y = -angle + Math.PI / 2;
+          c1.visible = false;
+          c2.visible = false;
+          scene.add(c1);
+          scene.add(c2);
+          seatCards.push([c1, c2]);
+
+          const dMarker = createRoleMarkerSprite("D", "#ffb300");
+          const sbMarker = createRoleMarkerSprite("SB", "#2aa8ff");
+          const bbMarker = createRoleMarkerSprite("BB", "#ff5f6d");
+          dMarker.position.set(x - tangentX * 3.2, 1.2 + TABLE_Y_OFFSET, z - tangentZ * 3.2);
+          sbMarker.position.set(x - tangentX * 5.2, 1.2 + TABLE_Y_OFFSET, z - tangentZ * 5.2);
+          bbMarker.position.set(x + tangentX * 5.2, 1.2 + TABLE_Y_OFFSET, z + tangentZ * 5.2);
+          scene.add(dMarker);
+          scene.add(sbMarker);
+          scene.add(bbMarker);
+          roleMarkers.push({ d: dMarker, sb: sbMarker, bb: bbMarker });
+        }
+      }
+
+      function getViewSeat(seat) {
+        return seat;
+      }
+
+      const communityCards = [];
+      function initCommunity() {
+        for (let i = 0; i < 5; i += 1) {
+          const card = makeCardMesh("--");
+          card.position.set(-7 + i * 3.4, -0.12 + TABLE_Y_OFFSET, 0);
+          card.visible = false;
+          scene.add(card);
+          communityCards.push(card);
+        }
+      }
+
+      initSeats();
+      initCommunity();
+
+      function setCardLabel(mesh, label) {
+        const texture = createTextTexture(label);
+        mesh.material[3].map = texture;
+        mesh.material[3].map.needsUpdate = true;
+      }
+
+      function setCardFaceUp(mesh, isFaceUp) {
+        mesh.rotation.x = isFaceUp ? 0 : Math.PI;
+      }
+
+      function getSeatPlayerLabel(player) {
+        return `玩家${player.seat + 1}`;
+      }
+
+
+      function log(message) {
+        const line = document.createElement("div");
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        logEl.prepend(line);
+      }
+
+      function send(payload) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify(payload));
+      }
+
+      function resetLocalRoomState(statusText = "未连接") {
+        hasJoinedRoom = false;
+        myId = null;
+        gameState = null;
+        joinBtn.textContent = "加入房间";
+        statusEl.textContent = statusText;
+        updatePlayersPanel();
+        updateTopTags();
+        updateSceneCards();
+        setActionState();
+      }
+
+      function updatePlayersPanel() {
+        if (!gameState) {
+          playersEl.textContent = "等待加入房间...";
+          return;
+        }
+        const me = gameState.players.find((p) => p.id === myId);
+        const lines = [
+          `房间: ${gameState.roomId}`,
+          `阶段: ${gameState.round}`,
+          `底池: ${gameState.pot}`,
+          `当前下注: ${gameState.currentBet}`,
+          `我的筹码: ${me ? me.chips : "-"}`,
+          "-----------"
+        ];
+        gameState.players
+          .slice()
+          .sort((a, b) => getViewSeat(a.seat) - getViewSeat(b.seat))
+          .forEach((p) => {
+            const isActing = p.id === gameState.currentTurn && p.inHand && !p.folded && !p.allIn;
+            const marker = isActing ? " <-行动中" : "";
+            const viewNo = getViewSeat(p.seat) + 1;
+            const role = p.id === gameState.dealerId ? "D" : p.id === gameState.smallBlindId ? "SB" : p.id === gameState.bigBlindId ? "BB" : "";
+            const state = p.folded ? "Fold" : p.allIn ? "All-in" : !p.inHand ? "Out" : isActing ? "Acting" : "Waiting";
+            lines.push(
+              `#${viewNo} ${getSeatPlayerLabel(p)} ${role ? `[${role}]` : ""} | 筹码:${p.chips} | Bet:${p.currentBet} | 状态:${state}${marker}`
+            );
+          });
+        playersEl.innerHTML = lines.map((s) => `<div>${s}</div>`).join("");
+      }
+
+      function updateTopTags() {
+        if (!gameState || !myId) {
+          myPlayerTag.textContent = "我是#-玩家";
+          turnTag.textContent = "当前行动: 等待中";
+          turnTag.classList.remove("turn-hot");
+          return;
+        }
+        const me = gameState.players.find((p) => p.id === myId);
+        if (me) {
+          const myRole = me.id === gameState.dealerId ? "D" : me.id === gameState.smallBlindId ? "SB" : me.id === gameState.bigBlindId ? "BB" : "";
+          myPlayerTag.textContent = `我是#${getViewSeat(me.seat) + 1}玩家${myRole ? ` [${myRole}]` : ""} | 第${gameState.handNumber || 0}局`;
+        } else {
+          myPlayerTag.textContent = "我是#-玩家";
+        }
+
+        const sbValue = gameState.smallBlind ?? 10;
+        const bbValue = gameState.bigBlind ?? 20;
+        const acting = gameState.players.find((p) => p.id === gameState.currentTurn && p.inHand && !p.folded && !p.allIn);
+        if (!acting) {
+          turnTag.textContent = `当前行动: 等待中 | 盲注 ${sbValue}/${bbValue}`;
+          turnTag.classList.remove("turn-hot");
+          return;
+        }
+        turnTag.textContent = `当前行动: #${getViewSeat(acting.seat) + 1}玩家 (${getSeatPlayerLabel(acting)}) | 盲注 ${sbValue}/${bbValue}`;
+        if (acting.id === myId) {
+          turnTag.classList.add("turn-hot");
+        } else {
+          turnTag.classList.remove("turn-hot");
+        }
+      }
+
+      function updateSceneCards() {
+        if (!gameState) {
+          for (let i = 0; i < 9; i += 1) {
+            setCardFaceUp(seatCards[i][0], false);
+            setCardFaceUp(seatCards[i][1], false);
+            seatCards[i][0].visible = false;
+            seatCards[i][1].visible = false;
+            seatMeshes[i].material.color.setHex(0x41a6ff);
+            if (roleMarkers[i]) {
+              roleMarkers[i].d.visible = false;
+              roleMarkers[i].sb.visible = false;
+              roleMarkers[i].bb.visible = false;
+            }
+          }
+          for (let i = 0; i < 5; i += 1) communityCards[i].visible = false;
+          return;
+        }
+        for (let i = 0; i < 9; i += 1) {
+          setCardLabel(seatCards[i][0], "??");
+          setCardLabel(seatCards[i][1], "??");
+          setCardFaceUp(seatCards[i][0], false);
+          setCardFaceUp(seatCards[i][1], false);
+          seatCards[i][0].visible = false;
+          seatCards[i][1].visible = false;
+          seatMeshes[i].material.color.setHex(0x41a6ff);
+          if (roleMarkers[i]) {
+            roleMarkers[i].d.visible = false;
+            roleMarkers[i].sb.visible = false;
+            roleMarkers[i].bb.visible = false;
+          }
+        }
+        for (const p of gameState.players) {
+          const viewSeat = getViewSeat(p.seat);
+          if (roleMarkers[viewSeat]) {
+            roleMarkers[viewSeat].d.visible = p.id === gameState.dealerId;
+            roleMarkers[viewSeat].sb.visible = p.id === gameState.smallBlindId;
+            roleMarkers[viewSeat].bb.visible = p.id === gameState.bigBlindId;
+          }
+          const hand = gameState.hands[p.id] || [];
+          const hasCards = hand.length === 2;
+          if (!hasCards) continue;
+          seatCards[viewSeat][0].visible = true;
+          seatCards[viewSeat][1].visible = true;
+          setCardLabel(seatCards[viewSeat][0], hand[0] || "??");
+          setCardLabel(seatCards[viewSeat][1], hand[1] || "??");
+          const isMe = p.id === myId;
+          setCardFaceUp(seatCards[viewSeat][0], isMe);
+          setCardFaceUp(seatCards[viewSeat][1], isMe);
+          seatMeshes[viewSeat].material.color.setHex(p.id === gameState.currentTurn ? 0xffd447 : p.folded ? 0x9c9c9c : 0x41a6ff);
+        }
+
+        for (let i = 0; i < 5; i += 1) {
+          const c = gameState.community[i];
+          const hasCommunityCard = typeof c === "string" && c.length === 2;
+          communityCards[i].visible = hasCommunityCard;
+          if (hasCommunityCard) {
+            setCardLabel(communityCards[i], c);
+            setCardFaceUp(communityCards[i], true);
+          }
+        }
+      }
+
+      function canAct() {
+        return gameState && gameState.currentTurn === myId && gameState.round !== "showdown";
+      }
+
+      function setActionState() {
+        const enabled = canAct();
+        [checkBtn, callBtn, raiseBtn, foldBtn].forEach((b) => (b.disabled = !enabled));
+      }
+
+      function requestJoin() {
+        pendingJoinPayload = {
+          type: "join",
+          name: nameInput.value.trim() || "玩家",
+          roomId: roomInput.value.trim() || "default"
+        };
+        if (hasJoinedRoom) return;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          statusEl.textContent = "已连接，加入中...";
+          send(pendingJoinPayload);
+          return;
+        }
+        if (ws && ws.readyState === WebSocket.CONNECTING) return;
+        ws = new WebSocket(`ws://${location.host}`);
+        ws.onopen = () => {
+          if (pendingJoinPayload) {
+            statusEl.textContent = "已连接，加入中...";
+            send(pendingJoinPayload);
+          }
+        };
+        ws.onmessage = (ev) => {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === "joined") {
+            myId = msg.playerId;
+            hasJoinedRoom = true;
+            pendingJoinPayload = null;
+            joinBtn.textContent = "退出房间";
+            statusEl.textContent = `已加入 ${msg.roomId} (${myId})`;
+            log(`已加入房间 ${msg.roomId}`);
+          } else if (msg.type === "left") {
+            resetLocalRoomState("已退出房间");
+          } else if (msg.type === "state") {
+            gameState = msg;
+            updatePlayersPanel();
+            updateSceneCards();
+            updateTopTags();
+            setActionState();
+          } else if (msg.type === "system") {
+            log(msg.message);
+          } else if (msg.type === "action") {
+            log(`${msg.playerId} 执行 ${msg.action}，当前下注=${msg.amount}`);
+          } else if (msg.type === "handEnded") {
+            const names = (msg.winners || []).map((w) => w.name).join(", ");
+            log(`本局结束，赢家: ${names}，每人赢得 ${msg.amountEach}`);
+          } else if (msg.type === "error") {
+            log(`错误: ${msg.message}`);
+          }
+        };
+        ws.onclose = () => {
+          resetLocalRoomState("连接关闭");
+          log("连接断开。");
+        };
+      }
+
+      joinBtn.onclick = () => {
+        if (!hasJoinedRoom) {
+          requestJoin();
+          return;
+        }
+        send({ type: "leave" });
+        resetLocalRoomState("正在退出...");
+      };
+      startBtn.onclick = () => send({ type: "start" });
+      checkBtn.onclick = () => send({ type: "action", action: "check" });
+      callBtn.onclick = () => send({ type: "action", action: "call" });
+      foldBtn.onclick = () => send({ type: "action", action: "fold" });
+      raiseBtn.onclick = () => send({ type: "action", action: "raise", amount: Number(raiseInput.value || 0) });
+
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      function animate() {
+        requestAnimationFrame(animate);
+        table.rotation.y += 0.0015;
+        tableEdge.rotation.z += 0.0015;
+        renderer.render(scene, camera);
+      }
+      animate();
+    </script>
+  </body>
+</html>
