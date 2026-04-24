@@ -555,7 +555,8 @@
           return;
         }
         if (ws && ws.readyState === WebSocket.CONNECTING) return;
-        ws = new WebSocket(`ws://${location.host}`);
+        const wsProtocol = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${wsProtocol}://${location.host}`);
         ws.onopen = () => {
           if (pendingJoinPayload) {
             statusEl.textContent = "已连接，加入中...";
