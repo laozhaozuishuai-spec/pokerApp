@@ -348,8 +348,9 @@
           const tangentZ = Math.cos(angle);
           c1.position.set(x - tangentX * 1.9, -0.25 + TABLE_Y_OFFSET, z - tangentZ * 1.9);
           c2.position.set(x + tangentX * 1.9, -0.25 + TABLE_Y_OFFSET, z + tangentZ * 1.9);
-          c1.rotation.y = -angle + Math.PI / 2;
-          c2.rotation.y = -angle + Math.PI / 2;
+          // Keep cards flat on table; rotate in-plane with Z axis only.
+          c1.rotation.z = -angle + Math.PI / 2;
+          c2.rotation.z = -angle + Math.PI / 2;
           c1.visible = false;
           c2.visible = false;
           scene.add(c1);
