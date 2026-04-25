@@ -191,13 +191,13 @@
       const seatMeshes = [];
       const seatCards = [];
       const roleMarkers = [];
-      const cardGeometry = new THREE.BoxGeometry(2.5, 0.12, 3.6);
+      const cardGeometry = new THREE.BoxGeometry(5.0, 0.2, 7.2);
       const SEAT_ANGLE_OFFSET = Math.PI / 2;
 
       function createTextTexture(text, bg = "#fff", fg = "#111") {
         const c = document.createElement("canvas");
-        c.width = 320;
-        c.height = 180;
+        c.width = 640;
+        c.height = 360;
         const ctx = c.getContext("2d");
         ctx.fillStyle = bg;
         ctx.fillRect(0, 0, c.width, c.height);
@@ -254,8 +254,8 @@
 
       function createCardBackTexture() {
         const c = document.createElement("canvas");
-        c.width = 256;
-        c.height = 128;
+        c.width = 512;
+        c.height = 256;
         const ctx = c.getContext("2d");
         ctx.fillStyle = "#1a4a9f";
         ctx.fillRect(0, 0, c.width, c.height);
@@ -331,8 +331,8 @@
           const c2 = makeCardMesh("??");
           const tangentX = -Math.sin(angle);
           const tangentZ = Math.cos(angle);
-          c1.position.set(x - tangentX * 1.5, -0.25 + TABLE_Y_OFFSET, z - tangentZ * 1.5);
-          c2.position.set(x + tangentX * 1.5, -0.25 + TABLE_Y_OFFSET, z + tangentZ * 1.5);
+          c1.position.set(x - tangentX * 2.8, -0.25 + TABLE_Y_OFFSET, z - tangentZ * 2.8);
+          c2.position.set(x + tangentX * 2.8, -0.25 + TABLE_Y_OFFSET, z + tangentZ * 2.8);
           c1.rotation.y = -angle + Math.PI / 2;
           c2.rotation.y = -angle + Math.PI / 2;
           c1.visible = false;
@@ -362,7 +362,7 @@
       function initCommunity() {
         for (let i = 0; i < 5; i += 1) {
           const card = makeCardMesh("--");
-          card.position.set(-7 + i * 3.4, -0.12 + TABLE_Y_OFFSET, 0);
+          card.position.set(-14 + i * 6.8, -0.12 + TABLE_Y_OFFSET, 0);
           card.visible = false;
           scene.add(card);
           communityCards.push(card);
@@ -433,7 +433,17 @@
             const marker = isActing ? " <-行动中" : "";
             const viewNo = getViewSeat(p.seat) + 1;
             const role = p.id === gameState.dealerId ? "D" : p.id === gameState.smallBlindId ? "SB" : p.id === gameState.bigBlindId ? "BB" : "";
-            const state = p.folded ? "Fold" : p.allIn ? "All-in" : !p.inHand ? "Out" : isActing ? "Acting" : "Waiting";
+            const state = p.folded
+              ? "Fold"
+              : p.allIn
+                ? "All-in"
+                : p.chips <= 0
+                  ? "Out"
+                  : !p.inHand
+                    ? "Waiting(next hand)"
+                    : isActing
+                      ? "Acting"
+                      : "Waiting";
             lines.push(
               `#${viewNo} ${getSeatPlayerLabel(p)} ${role ? `[${role}]` : ""} | 筹码:${p.chips} | Bet:${p.currentBet} | 状态:${state}${marker}`
             );
@@ -515,9 +525,11 @@
           if (!hasCards) continue;
           seatCards[viewSeat][0].visible = true;
           seatCards[viewSeat][1].visible = true;
-          setCardLabel(seatCards[viewSeat][0], hand[0] || "??");
-          setCardLabel(seatCards[viewSeat][1], hand[1] || "??");
           const isMe = p.id === (gameState.yourId || myId);
+          const leftLabel = isMe ? hand[0] || "??" : "??";
+          const rightLabel = isMe ? hand[1] || "??" : "??";
+          setCardLabel(seatCards[viewSeat][0], leftLabel);
+          setCardLabel(seatCards[viewSeat][1], rightLabel);
           setCardFaceUp(seatCards[viewSeat][0], isMe);
           setCardFaceUp(seatCards[viewSeat][1], isMe);
           seatMeshes[viewSeat].material.color.setHex(p.id === gameState.currentTurn ? 0xffd447 : p.folded ? 0x9c9c9c : 0x41a6ff);
