@@ -141,6 +141,7 @@
 
       let ws;
       let myId = null;
+      let mySeat = null;
       let gameState = null;
       let hasJoinedRoom = false;
       let pendingJoinPayload = null;
@@ -422,6 +423,7 @@
       function resetLocalRoomState(statusText = "未连接") {
         hasJoinedRoom = false;
         myId = null;
+        mySeat = null;
         gameState = null;
         joinBtn.textContent = "加入房间";
         statusEl.textContent = statusText;
@@ -546,7 +548,7 @@
           if (!hasCards) continue;
           seatCards[viewSeat][0].visible = true;
           seatCards[viewSeat][1].visible = true;
-          const isMe = p.id === viewerId;
+          const isMe = p.id === viewerId || (mySeat != null && p.seat === mySeat);
           const leftLabel = isMe ? hand[0] || "??" : "??";
           const rightLabel = isMe ? hand[1] || "??" : "??";
           setCardLabel(seatCards[viewSeat][0], leftLabel);
@@ -601,6 +603,7 @@
           const msg = JSON.parse(ev.data);
           if (msg.type === "joined") {
             myId = msg.playerId;
+            mySeat = typeof msg.seat === "number" ? msg.seat : null;
             hasJoinedRoom = true;
             pendingJoinPayload = null;
             joinBtn.textContent = "退出房间";
@@ -611,6 +614,10 @@
           } else if (msg.type === "state") {
             gameState = msg;
             if (msg.yourId) myId = msg.yourId;
+            if (mySeat == null) {
+              const me = msg.players?.find((p) => p.id === myId);
+              if (me && typeof me.seat === "number") mySeat = me.seat;
+            }
             updatePlayersPanel();
             updateSceneCards();
             updateTopTags();
