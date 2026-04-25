@@ -379,7 +379,8 @@
       }
 
       function setCardFaceUp(mesh, isFaceUp) {
-        mesh.rotation.x = isFaceUp ? 0 : Math.PI;
+        // Card front texture is on the opposite Y face; PI means face-up on table.
+        mesh.rotation.x = isFaceUp ? Math.PI : 0;
       }
 
       function getSeatPlayerLabel(player) {
@@ -516,7 +517,7 @@
           seatCards[viewSeat][1].visible = true;
           setCardLabel(seatCards[viewSeat][0], hand[0] || "??");
           setCardLabel(seatCards[viewSeat][1], hand[1] || "??");
-          const isMe = p.id === myId;
+          const isMe = p.id === (gameState.yourId || myId);
           setCardFaceUp(seatCards[viewSeat][0], isMe);
           setCardFaceUp(seatCards[viewSeat][1], isMe);
           seatMeshes[viewSeat].material.color.setHex(p.id === gameState.currentTurn ? 0xffd447 : p.folded ? 0x9c9c9c : 0x41a6ff);
@@ -576,6 +577,7 @@
             resetLocalRoomState("已退出房间");
           } else if (msg.type === "state") {
             gameState = msg;
+            if (msg.yourId) myId = msg.yourId;
             updatePlayersPanel();
             updateSceneCards();
             updateTopTags();
