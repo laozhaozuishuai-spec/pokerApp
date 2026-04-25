@@ -141,7 +141,6 @@
 
       let ws;
       let myId = null;
-      let mySeat = null;
       let gameState = null;
       let hasJoinedRoom = false;
       let pendingJoinPayload = null;
@@ -404,6 +403,17 @@
         mesh.material.needsUpdate = true;
       }
 
+      function handIsFaceUp(hand) {
+        return (
+          Array.isArray(hand) &&
+          hand.length === 2 &&
+          typeof hand[0] === "string" &&
+          typeof hand[1] === "string" &&
+          hand[0] !== "??" &&
+          hand[1] !== "??"
+        );
+      }
+
       function getSeatPlayerLabel(player) {
         return `玩家${player.seat + 1}`;
       }
@@ -423,7 +433,6 @@
       function resetLocalRoomState(statusText = "未连接") {
         hasJoinedRoom = false;
         myId = null;
-        mySeat = null;
         gameState = null;
         joinBtn.textContent = "加入房间";
         statusEl.textContent = statusText;
@@ -535,7 +544,6 @@
             roleMarkers[i].bb.visible = false;
           }
         }
-        const viewerId = gameState.yourId || myId;
         for (const p of gameState.players) {
           const viewSeat = getViewSeat(p.seat);
           if (roleMarkers[viewSeat]) {
@@ -548,13 +556,13 @@
           if (!hasCards) continue;
           seatCards[viewSeat][0].visible = true;
           seatCards[viewSeat][1].visible = true;
-          const isMe = p.id === viewerId || (mySeat != null && p.seat === mySeat);
-          const leftLabel = isMe ? hand[0] || "??" : "??";
-          const rightLabel = isMe ? hand[1] || "??" : "??";
+          const isFaceUp = handIsFaceUp(hand);
+          const leftLabel = isFaceUp ? hand[0] || "??" : "??";
+          const rightLabel = isFaceUp ? hand[1] || "??" : "??";
           setCardLabel(seatCards[viewSeat][0], leftLabel);
           setCardLabel(seatCards[viewSeat][1], rightLabel);
-          setCardFaceUp(seatCards[viewSeat][0], isMe);
-          setCardFaceUp(seatCards[viewSeat][1], isMe);
+          setCardFaceUp(seatCards[viewSeat][0], isFaceUp);
+          setCardFaceUp(seatCards[viewSeat][1], isFaceUp);
           seatMeshes[viewSeat].material.color.setHex(p.id === gameState.currentTurn ? 0xffd447 : p.folded ? 0x9c9c9c : 0x41a6ff);
         }
 
@@ -603,7 +611,6 @@
           const msg = JSON.parse(ev.data);
           if (msg.type === "joined") {
             myId = msg.playerId;
-            mySeat = typeof msg.seat === "number" ? msg.seat : null;
             hasJoinedRoom = true;
             pendingJoinPayload = null;
             joinBtn.textContent = "退出房间";
@@ -614,10 +621,6 @@
           } else if (msg.type === "state") {
             gameState = msg;
             if (msg.yourId) myId = msg.yourId;
-            if (mySeat == null) {
-              const me = msg.players?.find((p) => p.id === myId);
-              if (me && typeof me.seat === "number") mySeat = me.seat;
-            }
             updatePlayersPanel();
             updateSceneCards();
             updateTopTags();
