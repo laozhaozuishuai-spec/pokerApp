@@ -196,7 +196,7 @@ function getStateFor(room, viewerId) {
     hands: room.players.reduce((acc, p) => {
       if (!room.handActive || !p.inHand || p.cards.length !== 2) {
         acc[p.id] = [];
-      } else if (p.id === viewerId || room.round === "showdown") {
+      } else if (p.id === viewerId) {
         acc[p.id] = p.cards;
       } else {
         acc[p.id] = ["??", "??"];
