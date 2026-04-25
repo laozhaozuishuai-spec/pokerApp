@@ -191,7 +191,7 @@
       const seatMeshes = [];
       const seatCards = [];
       const roleMarkers = [];
-      const cardGeometry = new THREE.BoxGeometry(3.33, 0.14, 4.8);
+      const cardGeometry = new THREE.PlaneGeometry(3.33, 4.8);
       const SEAT_ANGLE_OFFSET = Math.PI / 2;
 
       function createTextTexture(text, bg = "#fff", fg = "#111") {
@@ -202,47 +202,41 @@
         ctx.fillStyle = bg;
         ctx.fillRect(0, 0, c.width, c.height);
         ctx.strokeStyle = "rgba(0,0,0,0.22)";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(3, 3, c.width - 6, c.height - 6);
+        ctx.lineWidth = 8;
+        ctx.strokeRect(8, 8, c.width - 16, c.height - 16);
 
         const suitMap = { S: "♠", H: "♥", D: "♦", C: "♣" };
         const suit = text.length === 2 ? text[1] : "";
         const rank = text.length === 2 ? text[0] : text;
         const suitChar = suitMap[suit] || "";
         const isRed = suit === "H" || suit === "D";
-        const mainColor = isRed ? "#d01818" : "#101218";
+        const mainColor = isRed ? "#c91515" : "#101218";
 
         if (suitChar) {
-          // top-left corner index (rank + suit)
           ctx.fillStyle = mainColor;
-          ctx.font = "bold 220px Arial";
+          ctx.font = "bold 150px Arial";
           ctx.textAlign = "left";
           ctx.textBaseline = "top";
-          ctx.fillText(rank, 18, 0);
-          ctx.font = "bold 200px Arial";
-          ctx.fillText(suitChar, 22, 140);
+          ctx.fillText(rank, 24, 10);
+          ctx.font = "bold 128px Arial";
+          ctx.fillText(suitChar, 30, 140);
 
-          // bottom-right mirrored corner index
           ctx.save();
           ctx.translate(c.width, c.height);
           ctx.rotate(Math.PI);
-          ctx.font = "bold 220px Arial";
-          ctx.fillText(rank, 18, 0);
-          ctx.font = "bold 200px Arial";
-          ctx.fillText(suitChar, 22, 140);
+          ctx.font = "bold 150px Arial";
+          ctx.fillText(rank, 24, 10);
+          ctx.font = "bold 128px Arial";
+          ctx.fillText(suitChar, 30, 140);
           ctx.restore();
 
-          // center suit with subtle white stroke for clarity
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.font = "bold 320px Arial";
-          ctx.strokeStyle = "rgba(255,255,255,0.85)";
-          ctx.lineWidth = 10;
-          ctx.strokeText(suitChar, c.width / 2, c.height / 2 + 10);
+          ctx.font = "bold 190px Arial";
           ctx.fillText(suitChar, c.width / 2, c.height / 2 + 10);
         } else {
           ctx.fillStyle = fg;
-          ctx.font = "bold 66px Arial";
+          ctx.font = "bold 120px Arial";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(text, c.width / 2, c.height / 2);
@@ -278,15 +272,12 @@
       function makeCardMesh(label) {
         const frontTexture = createTextTexture(label);
         const backTexture = createCardBackTexture();
-        const materials = [
-          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }),
-          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }),
-          new THREE.MeshStandardMaterial({ map: backTexture, roughness: 0.55 }),
-          new THREE.MeshStandardMaterial({ map: frontTexture, roughness: 0.6 }),
-          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }),
-          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 })
-        ];
-        return new THREE.Mesh(cardGeometry, materials);
+        const material = new THREE.MeshBasicMaterial({ map: backTexture, side: THREE.DoubleSide });
+        const mesh = new THREE.Mesh(cardGeometry, material);
+        mesh.userData.frontTexture = frontTexture;
+        mesh.userData.backTexture = backTexture;
+        mesh.rotation.x = -Math.PI / 2;
+        return mesh;
       }
 
       function createRoleMarkerSprite(text, bgColor) {
@@ -374,13 +365,17 @@
 
       function setCardLabel(mesh, label) {
         const texture = createTextTexture(label);
-        mesh.material[3].map = texture;
-        mesh.material[3].map.needsUpdate = true;
+        mesh.userData.frontTexture = texture;
+        if (mesh.userData.faceUp) {
+          mesh.material.map = texture;
+          mesh.material.needsUpdate = true;
+        }
       }
 
       function setCardFaceUp(mesh, isFaceUp) {
-        // Card front texture is on the opposite Y face; PI means face-up on table.
-        mesh.rotation.x = isFaceUp ? Math.PI : 0;
+        mesh.userData.faceUp = isFaceUp;
+        mesh.material.map = isFaceUp ? mesh.userData.frontTexture : mesh.userData.backTexture;
+        mesh.material.needsUpdate = true;
       }
 
       function getSeatPlayerLabel(player) {
