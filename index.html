@@ -533,6 +533,7 @@
             roleMarkers[i].bb.visible = false;
           }
         }
+        const viewerId = gameState.yourId || myId;
         for (const p of gameState.players) {
           const viewSeat = getViewSeat(p.seat);
           if (roleMarkers[viewSeat]) {
@@ -545,7 +546,7 @@
           if (!hasCards) continue;
           seatCards[viewSeat][0].visible = true;
           seatCards[viewSeat][1].visible = true;
-          const isMe = p.id === (gameState.yourId || myId);
+          const isMe = p.id === viewerId;
           const leftLabel = isMe ? hand[0] || "??" : "??";
           const rightLabel = isMe ? hand[1] || "??" : "??";
           setCardLabel(seatCards[viewSeat][0], leftLabel);
