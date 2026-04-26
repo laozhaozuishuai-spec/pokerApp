@@ -177,6 +177,19 @@ function getStateFor(room, viewerId) {
       safeTurn = room.currentTurn;
     }
   }
+  const hands = {};
+  for (const p of room.players) {
+    if (!room.handActive || !p.inHand || p.cards.length !== 2) {
+      hands[p.id] = [];
+    } else {
+      hands[p.id] = ["??", "??"];
+    }
+  }
+  const viewer = room.players.find((p) => p.id === viewerId);
+  if (viewer && room.handActive && viewer.inHand && viewer.cards.length === 2) {
+    hands[viewer.id] = viewer.cards;
+  }
+
   return {
     type: "state",
     roomId: room.id,
@@ -193,16 +206,7 @@ function getStateFor(room, viewerId) {
     community: room.community,
     players: room.players.map(publicPlayer),
     yourId: viewerId,
-    hands: room.players.reduce((acc, p) => {
-      if (!room.handActive || !p.inHand || p.cards.length !== 2) {
-        acc[p.id] = [];
-      } else if (p.id === viewerId) {
-        acc[p.id] = p.cards;
-      } else {
-        acc[p.id] = ["??", "??"];
-      }
-      return acc;
-    }, {})
+    hands
   };
 }
 
